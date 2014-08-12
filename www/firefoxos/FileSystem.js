@@ -19,34 +19,11 @@
  *
 */
 
-/* 
- * info
- *
- * persistentPath - full path to app sandboxed persistent storage
- * temporaryPath - full path to app sandboxed temporary storage
- * localPath - full path to app source (www dir)
- * MAX_SIZE - maximum size for filesystem request
- */
+FILESYSTEM_PREFIX = "cdvfile://";
 
-var info = {
-    persistentPath: "", 
-    temporaryPath: "", 
-    localPath: "",
-    MAX_SIZE: 64 * 1024 * 1024 * 1024
+module.exports = {
+    __format__: function(fullPath) {
+        return (FILESYSTEM_PREFIX + this.name + (fullPath[0] === '/' ? '' : '/') + encodeURI(fullPath));
+    }
 };
 
-cordova.exec(
-    function (path) {
-        info.persistentPath = 'file://' + path + '/webviews/webfs/persistent/local__0';
-        info.temporaryPath = 'file://' + path + '/webviews/webfs/temporary/local__0';
-        info.localPath = path.replace('/data', '/app/native');
-    },
-    function () {
-        console.error('Unable to determine local storage file path');
-    },
-    'File',
-    'getHomePath',
-    false
-);
-
-module.exports = info;
