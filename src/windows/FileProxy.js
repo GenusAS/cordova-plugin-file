@@ -220,6 +220,7 @@ function pathFromURL(url) {
 
 function getFilesystemFromURL(url) {
     url=url.replace(msapplhRE,'ms-appdata:///');
+    url=url.replace(/^\w{1}:/, function(driveLetter){ return 'file:///'+driveLetter});
     var res;
     if (url.indexOf("file:/")===0)
         res = getFilesystemFromPath(pathFromURL(url));
