@@ -30,6 +30,8 @@ exports.defineAutoTests = function () {
     var isIndexedDBShim = isBrowser && !isChrome;   // Firefox and IE for example
 
     var isWindows = (cordova.platformId === "windows" || cordova.platformId === "windows8");
+    
+    var MEDIUM_TIMEOUT = 15000;
 
     describe('File API', function () {
         // Adding a Jasmine helper matcher, to report errors when comparing to FileError better.
@@ -2191,11 +2193,14 @@ exports.defineAutoTests = function () {
                 reader.onloadend = verifier;
                 reader.readAsText(blob);
             });
-            function writeDummyFile(writeBinary, callback, done) {
+            function writeDummyFile(writeBinary, callback, done, fileContents) {
                 var fileName = "dummy.txt",
                 fileEntry = null,
-                fileData = '\u20AC\xEB - There is an exception to every rule. Except this one.',
-                fileDataAsBinaryString = '\xe2\x82\xac\xc3\xab - There is an exception to every rule. Except this one.',
+                // use default string if file data is not provided
+                fileData = fileContents !== undefined ? fileContents :
+                    '\u20AC\xEB - There is an exception to every rule. Except this one.',
+                fileDataAsBinaryString = fileContents !== undefined ? fileContents :
+                    '\xe2\x82\xac\xc3\xab - There is an exception to every rule. Except this one.',
                 createWriter = function (fe) {
                     fileEntry = fe;
                     fileEntry.createWriter(writeFile, failed.bind(null, done, 'fileEntry.createWriter - Error reading file: ' + fileName));
@@ -2213,7 +2218,7 @@ exports.defineAutoTests = function () {
                 // create a file, write to it, and read it in again
                 createFile(fileName, createWriter, failed.bind(null, done, 'createFile - Error creating file: ' + fileName));
             }
-            function runReaderTest(funcName, writeBinary, done, verifierFunc, sliceStart, sliceEnd) {
+            function runReaderTest(funcName, writeBinary, done, verifierFunc, sliceStart, sliceEnd, fileContents) {
                 writeDummyFile(writeBinary, function (fileEntry, file, fileData, fileDataAsBinaryString) {
                     var verifier = function (evt) {
                         expect(evt).toBeDefined();
@@ -2230,7 +2235,7 @@ exports.defineAutoTests = function () {
                         file = file.slice(sliceStart, file.size, file.type);
                     }
                     reader[funcName](file);
-                }, done);
+                }, done, fileContents);
             }
             function arrayBufferEqualsString(ab, str) {
                 var buf = new Uint8Array(ab);
@@ -2245,6 +2250,13 @@ exports.defineAutoTests = function () {
                     expect(evt.target.result).toBe(fileData);
                     done();
                 });
+            });
+            it("file.spec.84.1 should read JSON file properly, readAsText", function (done) {
+                var testObject = {key1: "value1", key2: 2};
+                runReaderTest('readAsText', false, done, function (evt, fileData, fileDataAsBinaryString) {
+                    expect(evt.target.result).toEqual(JSON.stringify(testObject));
+                    done();
+                }, undefined, undefined, JSON.stringify(testObject));
             });
             it("file.spec.85 should read file properly, Data URI", function (done) {
                 runReaderTest('readAsDataURL', true, done, function (evt, fileData, fileDataAsBinaryString) {
@@ -2376,6 +2388,7 @@ exports.defineAutoTests = function () {
             it("file.spec.96 should be able to write and append to file, createWriter", function (done) {
                 var fileName = "writer.append.createWriter", // file content
                 content = "There is an exception to every rule.", // for checkin file length
+                exception = " Except this one.",
                 length = content.length;
                 // create file, then write and append to it
                 createFile(fileName, function (fileEntry) {
@@ -2386,7 +2399,6 @@ exports.defineAutoTests = function () {
                             expect(writer.length).toBe(length);
                             expect(writer.position).toBe(length);
                             // Append some more data
-                            var exception = " Except this one.";
                             writer.onwriteend = secondVerifier;
                             length += exception.length;
                             writer.seek(writer.length);
@@ -2395,6 +2407,13 @@ exports.defineAutoTests = function () {
                         secondVerifier = function (evt) {
                             expect(writer.length).toBe(length);
                             expect(writer.position).toBe(length);
+                            var reader = new FileReader();
+                            reader.onloadend = thirdVerifier;
+                            reader.onerror = failed.bind(null, done, 'reader.onerror - Error reading file: ' + fileName);
+                            fileEntry.file(function(f){reader.readAsText(f);});
+                        },
+                        thirdVerifier = function (evt) {
+                            expect(evt.target.result).toBe(content+exception);
                             // cleanup
                             deleteFile(fileName, done);
                         };
@@ -2406,7 +2425,8 @@ exports.defineAutoTests = function () {
             });
             it("file.spec.97 should be able to write and append to file, File object", function (done) {
                 var fileName = "writer.append.File", // file content
-                content = "There is an exception to every rule.", // for checking file length
+                content = "There is an exception to every rule.", // for checkin file length
+                exception = " Except this one.",
                 length = content.length;
                 root.getFile(fileName, {
                     create : true
@@ -2417,7 +2437,6 @@ exports.defineAutoTests = function () {
                             expect(writer.length).toBe(length);
                             expect(writer.position).toBe(length);
                             // Append some more data
-                            var exception = " Except this one.";
                             writer.onwriteend = secondVerifier;
                             length += exception.length;
                             writer.seek(writer.length);
@@ -2426,6 +2445,13 @@ exports.defineAutoTests = function () {
                         secondVerifier = function () {
                             expect(writer.length).toBe(length);
                             expect(writer.position).toBe(length);
+                            var reader = new FileReader();
+                            reader.onloadend = thirdVerifier;
+                            reader.onerror = failed.bind(null, done, 'reader.onerror - Error reading file: ' + fileName);
+                            fileEntry.file(function(f){reader.readAsText(f);});
+                        },
+                        thirdVerifier = function (evt) {
+                            expect(evt.target.result).toBe(content+exception);
                             // cleanup
                             deleteFile(fileName, done);
                         };
@@ -2438,6 +2464,7 @@ exports.defineAutoTests = function () {
             it("file.spec.98 should be able to seek to the middle of the file and write more data than file.length", function (done) {
                 var fileName = "writer.seek.write", // file content
                 content = "This is our sentence.", // for checking file length
+                exception = "newer sentence.",
                 length = content.length;
                 // create file, then write and append to it
                 createFile(fileName, function (fileEntry) {
@@ -2447,7 +2474,6 @@ exports.defineAutoTests = function () {
                             expect(writer.length).toBe(length);
                             expect(writer.position).toBe(length);
                             // Append some more data
-                            var exception = "newer sentence.";
                             writer.onwriteend = secondVerifier;
                             length = 12 + exception.length;
                             writer.seek(12);
@@ -2456,6 +2482,13 @@ exports.defineAutoTests = function () {
                         secondVerifier = function (evt) {
                             expect(writer.length).toBe(length);
                             expect(writer.position).toBe(length);
+                            var reader = new FileReader();
+                            reader.onloadend = thirdVerifier;
+                            reader.onerror = failed.bind(null, done, 'reader.onerror - Error reading file: ' + fileName);
+                            fileEntry.file(function(f){reader.readAsText(f);});
+                        },
+                        thirdVerifier = function (evt) {
+                            expect(evt.target.result).toBe(content.substr(0,12)+exception);
                             // cleanup
                             deleteFile(fileName, done);
                         };
@@ -2474,6 +2507,7 @@ exports.defineAutoTests = function () {
 
                 var fileName = "writer.seek.write2", // file content
                 content = "This is our sentence.", // for checking file length
+                exception = "new.",
                 length = content.length;
                 // create file, then write and append to it
                 createFile(fileName, function (fileEntry) {
@@ -2483,7 +2517,6 @@ exports.defineAutoTests = function () {
                             expect(writer.length).toBe(length);
                             expect(writer.position).toBe(length);
                             // Append some more data
-                            var exception = "new.";
                             writer.onwriteend = secondVerifier;
                             length = 8 + exception.length;
                             writer.seek(8);
@@ -2492,6 +2525,13 @@ exports.defineAutoTests = function () {
                         secondVerifier = function (evt) {
                             expect(writer.length).toBe(length);
                             expect(writer.position).toBe(length);
+                            var reader = new FileReader();
+                            reader.onloadend = thirdVerifier;
+                            reader.onerror = failed.bind(null, done, 'reader.onerror - Error reading file: ' + fileName);
+                            fileEntry.file(function(f){reader.readAsText(f);});
+                        },
+                        thirdVerifier = function (evt) {
+                            expect(evt.target.result).toBe(content.substr(0,8)+exception);
                             // cleanup
                             deleteFile(fileName, done);
                         };
@@ -3262,6 +3302,8 @@ exports.defineAutoTests = function () {
                     expectedPaths.push('externalRootDirectory', 'sharedDirectory');
                 } else if (cordova.platformId == 'ios') {
                     expectedPaths.push('syncedDataDirectory', 'documentsDirectory', 'tempDirectory');
+                } else if (cordova.platformId == 'osx') {
+                    expectedPaths.push('documentsDirectory', 'tempDirectory', 'rootDirectory');
                 } else {
                     console.log('Skipping test due on unsupported platform.');
                     return;
@@ -3443,19 +3485,23 @@ exports.defineAutoTests = function () {
                     }, failed.bind(null, done, 'resolveLocalFileSystemURL failed for content provider'));
                 });
             });
+
+            // these tests ensure that you can read and copy from android_asset folder
+            // for details see https://issues.apache.org/jira/browse/CB-6428
+            // and https://mail-archives.apache.org/mod_mbox/cordova-dev/201508.mbox/%3C782154441.8406572.1440182722528.JavaMail.yahoo%40mail.yahoo.com%3E
             describe('asset: URLs', function() {
                 it("file.spec.141 filePaths.applicationStorage", function() {
                     expect(cordova.file.applicationDirectory).toEqual('file:///android_asset/');
-                });
+                }, MEDIUM_TIMEOUT);
                 it("file.spec.142 assets should be enumerable", function(done) {
-                    resolveLocalFileSystemURL('file:///android_asset/www/', function(entry) {
+                    resolveLocalFileSystemURL('file:///android_asset/www/fixtures/asset-test', function(entry) {
                         var reader = entry.createReader();
                         reader.readEntries(function (entries) {
                             expect(entries.length).not.toBe(0);
                             done();
                         }, failed.bind(null, done, 'reader.readEntries - Error during reading of entries from assets directory'));
                     }, failed.bind(null, done, 'resolveLocalFileSystemURL failed for assets'));
-                });
+                }, MEDIUM_TIMEOUT);
                 it("file.spec.143 copyTo: asset -> temporary", function(done) {
                     var file2 = "entry.copy.file2b",
                     fullPath = joinURL(temp_root.fullPath, file2),
@@ -3478,10 +3524,10 @@ exports.defineAutoTests = function () {
                     temp_root.getFile(file2, {}, function (entry) {
                         entry.remove(transfer, failed.bind(null, done, 'entry.remove - Error removing file: ' + file2));
                     }, transfer);
-                });
+                }, MEDIUM_TIMEOUT);
             });
             it("file.spec.144 copyTo: asset directory", function (done) {
-                var srcUrl = 'file:///android_asset/www/plugins/cordova-plugin-file';
+                var srcUrl = 'file:///android_asset/www/fixtures/asset-test';
                 var dstDir = "entry.copy.dstDir";
                 var dstPath = joinURL(root.fullPath, dstDir);
                 // create a new directory entry to kick off it
@@ -3501,7 +3547,7 @@ exports.defineAutoTests = function () {
                                 expect(dirEntry.isDirectory).toBe(true);
                                 expect(dirEntry.fullPath).toCanonicallyMatch(dstPath);
                                 expect(dirEntry.name).toCanonicallyMatch(dstDir);
-                                dirEntry.getFile('www/File.js', {
+                                dirEntry.getFile('asset-test.txt', {
                                     create : false
                                 }, function (fileEntry) {
                                     expect(fileEntry).toBeDefined();
@@ -3513,7 +3559,7 @@ exports.defineAutoTests = function () {
                         }, failed.bind(null, done, 'directory.copyTo - Error copying directory'));
                     }, failed.bind(null, done, 'resolving src dir'));
                 }, failed.bind(null, done, 'deleteEntry - Error removing directory : ' + dstDir));
-            });
+            }, MEDIUM_TIMEOUT);
         }
     });
 
@@ -3585,8 +3631,10 @@ exports.defineManualTests = function (contentEl, createActionButton) {
 
     var fsRoots = {
         "ios" : "library,library-nosync,documents,documents-nosync,cache,bundle,root,private",
+        "osx" : "library,library-nosync,documents,documents-nosync,cache,bundle,root,private",
         "android" : "files,files-external,documents,sdcard,cache,cache-external,root",
-        "amazon-fireos" : "files,files-external,documents,sdcard,cache,cache-external,root"
+        "amazon-fireos" : "files,files-external,documents,sdcard,cache,cache-external,root",
+        "windows": "temporary,persistent"
     };
 
     //Add title and align to content
